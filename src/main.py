@@ -4,10 +4,11 @@ from PIL import Image, ImageTk
 from tkinter.simpledialog import askinteger
 import csv
 import datetime, time
+import os
 
 class Centroid():
-	def __init__(self, x, y, label):
-		self.__x, self.__y, self.__label = x, y, label
+	def __init__(self, x, y, label, filename):
+		self.__x, self.__y, self.__label, self.__filename = x, y, label, filename
 	@property
 	def x(self):
 		return self.__x
@@ -17,6 +18,9 @@ class Centroid():
 	@property
 	def label(self):
 		return self.__label
+	@property
+	def filename(self):
+		return self.__filename
 	@x.setter
 	def x(self, x):
 		self.__x = x
@@ -26,8 +30,8 @@ class Centroid():
 	@label.setter
 	def label(self, label):
 		self.__label = label
-	def update(self, x, y, label):
-		self.__x, self.__y, self.__label = x, y, label
+	def update(self, x, y, label, filename):
+		self.__x, self.__y, self.__label, self.__filename = x, y, label, filename
 
 class App(tk.Frame):
 	def __init__(self, parent, *args, **kwargs):
@@ -45,53 +49,60 @@ class App(tk.Frame):
 		self.canvas.grid(row = 0, column = 0, columnspan = 1, sticky = tk.W + tk.E + tk.N + tk.S)
 		self.centroid_circle_radius = 10
 		self.centroid_circle_width = 5
-		self.canvas_centroid_ovals = []
+		self.__canvas_centroid_ovals = []
+		self.__current_centroids = []
 
 		## Image
-		self.img = []
-		self.generate_random_image()
-		self.img_obj = self.canvas.create_image(0,0,anchor = tk.NW, image = self.img)
+		self.__imgs = []
+		self.__img_types = [".jpg", ".png", ".tiff", ".jpeg", ".bmp"]
+		self.__img_names = list(filter(lambda file_name: any(char in file_name for char in self.__img_types), os.listdir()))
+		if not self.__img_names:
+			print('No images in this directory to label! Insert images.')
+			exit()
+		for img_file in self.__img_names:
+			self.__imgs.append(ImageTk.PhotoImage(Image.open(img_file)))
+		self.__img_index = 0
+		self.img_obj = self.canvas.create_image(0,0,anchor = tk.NW, image = self.__imgs[self.__img_index])
+
 		self.canvas.bind('<Button-1>', self.cursor_callback)
 
 		# Buttons
 		## Next image
 		self.button_next = tk.Button(text = "Export and Generate Next image", command = self.next_image_callback)
 		self.button_next.grid(row = 1, column = 0, sticky = tk.W + tk.E + tk.N + tk.S)
-		print(self.button_next.__dict__)
-
-		# Current centroid
-		self.__centroid = Centroid(0,0,0)
 
 		# Add header to csv file
 		self.__time_string = datetime.datetime.fromtimestamp(time.time()).strftime("%Y_%m_%d_%H_%M_%S")
 		self.__dataset_filename = 'data-' + self.__time_string
 		with open(self.__dataset_filename + '.csv', 'a') as dataset_file_obj:
 			writer_obj = csv.writer(dataset_file_obj)
-			writer_obj.writerow(["x", "y", "label"])
+			writer_obj.writerow(["x", "y", "label", "filename"])
 
 
 	def cursor_callback(self, e):
-		print(f'x,y: {e.x},{e.y}')
-		centroid_xy = e.x, e.y
 		centroid_class = askinteger("Labelling the centroid class", "Enter an integer")
 		if type(centroid_class) != int:
 			tk.messagebox.showerror('Value Error', 'Error: Centroid class must be an integer')
-		self.__centroid.update(e.x, e.y, centroid_class)
 		x0 = e.x - self.centroid_circle_radius
 		y0 = e.y - self.centroid_circle_radius
 		x1 = e.x + self.centroid_circle_radius
 		y1 = e.y + self.centroid_circle_radius
-		self.canvas_centroid_ovals.append(self.canvas.create_oval(x0, y0, x1, y1, fill = "red", outline = "black", width = self.centroid_circle_width))
+		self.__canvas_centroid_ovals.append(self.canvas.create_oval(x0, y0, x1, y1, fill = "red", outline = "black", width = self.centroid_circle_width))
+		self.__current_centroids.append(Centroid(e.x, e.y, centroid_class, self.__img_names[self.__img_index]))
 
 	def next_image_callback(self):
-		for oval in self.canvas_centroid_ovals:
+		for oval in self.__canvas_centroid_ovals:
 			self.canvas.delete(oval)
-		del self.canvas_centroid_ovals[:]
+		del self.__canvas_centroid_ovals[:]
 		with open(self.__dataset_filename + '.csv', 'a') as dataset_file_obj:
 			writer_obj = csv.writer(dataset_file_obj)
-			writer_obj.writerow([self.__centroid.x, self.__centroid.y, self.__centroid.label])
-		self.generate_random_image()
-		self.canvas.itemconfig(self.img_obj, image = self.img)
+			for centroid in self.__current_centroids:
+				writer_obj.writerow([centroid.x, centroid.y, centroid.label, centroid.filename])
+		del self.__current_centroids[:]
+		self.__img_index += 1
+		if self.__img_index == len(self.__imgs):
+			exit()
+		self.canvas.itemconfig(self.img_obj, image = self.__imgs[self.__img_index])
 
 	def generate_random_image(self):
 		self.img = ImageTk.PhotoImage(Image.fromarray(np.random.randint(255, size = (self.height, self.width, 3), dtype = np.uint8)))
